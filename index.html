@@ -57,19 +57,24 @@
           <!-- Main Tweet -->
           <div class="flex items-start">
             <!-- Avatar -->
-            <img :src="tweet.avatar" alt="Avatar" class="w-12 h-12 rounded-full mr-4" />
+            <a :href="tweet.profileUrl" target="_blank" class="mr-4">
+              <img :src="tweet.avatar" alt="Avatar" class="w-12 h-12 rounded-full" />
+            </a>
 
             <!-- Content -->
             <div class="flex-1">
               <div class="flex justify-between">
                 <div>
-                  <p class="font-semibold text-gray-800" x-text="tweet.userName"></p>
+                  <a :href="tweet.profileUrl" target="_blank" class="font-semibold text-gray-800 hover:underline"
+                    x-text="tweet.userName"></a>
                   <p class="text-sm text-gray-500" x-text="'@' + tweet.userHandle"></p>
                 </div>
+
                 <!-- Timestamp -->
                 <p class="text-sm text-gray-400 ml-auto" x-text="tweet.timestamp"></p>
               </div>
-              <p class="mt-2 text-gray-700 whitespace-pre-wrap" x-text="tweet.content"></p>
+              <a :href="tweet.postUrl" target="_blank"
+                class="block mt-2 text-gray-700 whitespace-pre-wrap hover:underline" x-text="tweet.content"></a>
               <div class="mt-2 grid grid-cols-2 gap-2" x-show="tweet.images?.length > 0">
                 <template x-for="image in tweet.images" :key="image">
                   <img :src="image" alt="Tweet Image" class="rounded-md border border-gray-300 max-w-full h-auto" />
@@ -109,7 +114,7 @@
             const { commit, did } = data
             // console.log(data)
             if (!commit) return
-            const { operation, cid, record } = commit || {}
+            const { operation, cid, record, rkey } = commit || {}
             const { text, langs, createdAt, $type, reply, embed } = record || {}
 
             if (operation == 'delete') {
@@ -147,10 +152,10 @@
                 }
               }
               if (embed) {
-                if(embed.$type == "app.bsky.embed.images") {
+                if (embed.$type == "app.bsky.embed.images") {
 
                   newTweet.images = []
-                  for( const img of embed.images) {
+                  for (const img of embed.images) {
                     console.log("IMG", img)
                     const blob = await this.getImageBlob(img.image.ref.$link, did)
                     newTweet.images.push(URL.createObjectURL(blob))
@@ -164,6 +169,9 @@
                 newTweet.userHandle = handle
                 newTweet.userName = displayName
                 newTweet.avatar = avatar
+                newTweet.postUrl = `https://bsky.app/profile/${handle}/post/${rkey}`
+                newTweet.profileUrl = `https://bsky.app/profile/${handle}`
+
               } catch (err) {
                 console.error(err)
               }
