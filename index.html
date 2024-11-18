@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Real-Time Feed</title>
+  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.2/dist/cdn.min.js" defer></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script type="module">
+    import { stemmer } from 'https://esm.sh/stemmer@2?bundle'
+    window.stemmer = stemmer
+    console.log("STEMMER", stemmer)
+  </script>
+  <script type="module">
+    import { format } from 'https://cdn.jsdelivr.net/npm/date-fns@4.1.0/+esm'
+    window.format = format
+  </script>
+  <!-- <script type="module" src="./dist/bundle.js"></script> -->
+
+</head>
+
+<body class="bg-gray-100 min-h-screen flex items-center justify-center">
+
+  <div x-data="tweetFeed()" class="w-full max-w-2xl p-4">
+    <!-- Heading -->
+    <h1 class="text-2xl font-bold mb-4 text-gray-800">Real-Time Feed</h1>
+
+    <!-- Match Word Input -->
+    <div class="mb-4">
+      <label for="match-word" class="block text-sm font-medium text-gray-700">Filter by word:</label>
+      <input id="match-word" type="text" x-model="matchWord" placeholder="Enter a word to match..."
+        class="mt-1 w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400" />
+    </div>
+
+    <!-- Tweets List -->
+    <div>
+      <template x-for="tweet in tweets" :key="tweet.id">
+        <div class="bg-white rounded-lg shadow p-4 mb-4">
+          <!-- Parent Tweet -->
+          <template x-if="tweet.parent">
+            <div class="bg-gray-50 p-3 rounded border border-gray-300 mb-3 flex items-start">
+              <!-- Parent Tweet Avatar -->
+              <img :src="tweet.parent.avatar || 'https://via.placeholder.com/50'" alt="Reply Avatar"
+                class="w-8 h-8 rounded-full mr-3" />
+              <!-- Parent Tweet Content -->
+              <div>
+                <p class="font-semibold text-gray-600">
+                  <span x-text="tweet.parent.userName || 'Anonymous'"></span>
+                  <span class="text-sm text-gray-500" x-text="'@' + (tweet.parent.userHandle || 'anonymous')"></span>
+                </p>
+                <p class="text-sm text-gray-500 mt-1" x-text="tweet.parent.content || 'Parent tweet not available'"></p>
+              </div>
+            </div>
+          </template>
+
+          <!-- Main Tweet -->
+          <div class="flex items-start">
+            <!-- Avatar -->
+            <img :src="tweet.avatar" alt="Avatar" class="w-12 h-12 rounded-full mr-4" />
+
+            <!-- Content -->
+            <div class="flex-1">
+              <div class="flex justify-between">
+                <div>
+                  <p class="font-semibold text-gray-800" x-text="tweet.userName"></p>
+                  <p class="text-sm text-gray-500" x-text="'@' + tweet.userHandle"></p>
+                </div>
+                <!-- Timestamp -->
+                <p class="text-sm text-gray-400 ml-auto" x-text="tweet.timestamp"></p>
+              </div>
+              <p class="mt-2 text-gray-700 whitespace-pre-wrap" x-text="tweet.content"></p>
+              <div class="mt-2 grid grid-cols-2 gap-2" x-show="tweet.images?.length > 0">
+                <template x-for="image in tweet.images" :key="image">
+                  <img :src="image" alt="Tweet Image" class="rounded-md border border-gray-300 max-w-full h-auto" />
+                </template>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </template>
+    </div>
+  </div>
+
+
+
+  <script>
+    function tweetFeed() {
+      return {
+        matchWord: 'maga', // Default match word
+        tweets: [],
+        embedTypes: [
+          //for later
+          "app.bsky.embed.images",
+          "app.bsky.embed.external",
+          "app.bsky.embed.record",
+          "app.bsky.embed.video",
+          "app.bsky.embed.recordWithMedia"
+        ],
+        init() {
+          // Set up WebSocket subscription
+          const exampleSocket = new WebSocket("wss://jetstream2.us-east.bsky.network/subscribe\?wantedCollections=app.bsky.feed.post");
+
+          exampleSocket.onmessage = async (event) => {
+            // const event = JSON.parse(event)
+            // console.log(event)
+            const data = JSON.parse(event.data);
+            const { commit, did } = data
+            // console.log(data)
+            if (!commit) return
+            const { operation, cid, record } = commit || {}
+            const { text, langs, createdAt, $type, reply, embed } = record || {}
+
+            if (operation == 'delete') {
+              return
+            }
+            const newTweet = {
+              id: cid,
+              userName: "Anonymous",
+              userHandle: 'anonymous',
+              content: text || '',
+              timestamp: format(new Date(createdAt), 'PPpp'),
+            };
+            const stemmedSearch = stemmer(this.matchWord)
+            const stemmedContent = stemmer(text)
+            const regex = new RegExp(`\\b${stemmedSearch}\\b`, 'i'); // Create regex with the current match word
+            if (regex.test(stemmedContent)) {
+              // console.log(data)
+              const { parent, root } = reply || {}
+              if (parent?.uri) {
+                console.log(data)
+                const [_, __, repo, collection, rkey] = parent.uri.split("/")
+                try {
+                  const reply = await this.getReply({
+                    repo,
+                    collection,
+                    rkey,
+                    cid: parent.cid
+                  })
+                  const parentProfile = await this.getProfile(repo)
+                  const { handle, avatar, displayName } = parentProfile
+                  newTweet.parent = { content: reply.value?.text, userHandle: handle, userName: parentProfile.displayName, avatar: parentProfile.avatar }
+                  console.log("reply", reply)
+                } catch (err) {
+                  console.error(err)
+                }
+              }
+              if (embed) {
+                if(embed.$type == "app.bsky.embed.images") {
+
+                  newTweet.images = []
+                  for( const img of embed.images) {
+                    console.log("IMG", img)
+                    const blob = await this.getImageBlob(img.image.ref.$link, did)
+                    newTweet.images.push(URL.createObjectURL(blob))
+                  }
+                }
+              }
+              try {
+                const profile = await this.getProfile(did)
+                console.log("profile", profile)
+                const { handle, avatar, displayName } = profile
+                newTweet.userHandle = handle
+                newTweet.userName = displayName
+                newTweet.avatar = avatar
+              } catch (err) {
+                console.error(err)
+              }
+              this.tweets.unshift(newTweet);
+            }
+          };
+        },
+
+        async getProfile(actorIdentifier) {
+          const endpoint = `https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile`;
+          // Construct the URL with the required query parameter
+          const url = `${endpoint}?actor=${encodeURIComponent(actorIdentifier)}`;
+          const profile = await fetchFrom(url)
+          return profile
+        },
+        async getReply(parent) {
+          const queryParams = new URLSearchParams(parent).toString();
+          const url = `https://public.api.bsky.app/xrpc/com.atproto.repo.getRecord?${queryParams}`;
+          const profile = await fetchFrom(url)
+          return profile
+        },
+        async getImageBlob($link, did) {
+          const queryParams = new URLSearchParams({
+            cid: $link,
+            did
+          }).toString();
+          const url = `https://public.api.bsky.app/xrpc/com.atproto.sync.getBlob?${queryParams}`;
+          const imageBlob = await fetchFrom(url)
+          return imageBlob
+        },
+        // Watch for changes to the match word and update filtered tweets
+        watchMatchWord: {
+          get() {
+            return this.matchWord;
+          },
+          set(value) {
+            this.matchWord = value;
+          }
+        }
+      };
+    }
+    async function fetchFrom(url) {
+
+      try {
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error(`Error fetching: ${response.status} ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        return data;
+      } catch (error) {
+        console.error('Failed to fetch:', error);
+        throw error;
+      }
+    }
+  </script>
+</body>
+
+</html>
