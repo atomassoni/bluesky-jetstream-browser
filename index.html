@@ -75,11 +75,13 @@
               </div>
               <a :href="tweet.postUrl" target="_blank"
                 class="block mt-2 text-gray-700 whitespace-pre-wrap hover:underline" x-text="tweet.content"></a>
-              <div class="mt-2 grid grid-cols-2 gap-2" x-show="tweet.images?.length > 0">
-                <template x-for="image in tweet.images" :key="image">
-                  <img :src="image" alt="Tweet Image" class="rounded-md border border-gray-300 max-w-full h-auto" />
-                </template>
-              </div>
+                <div class="mt-2" x-show="tweet.images?.length > 0">
+                  <template x-for="image in tweet.images" :key="image">
+                    <a :href="tweet.postUrl" target="_blank">
+                      <img :src="image" alt="Tweet Image" class="rounded-md border border-gray-300 w-full h-auto mt-2" />
+                    </a>
+                  </template>
+                </div>
             </div>
           </div>
 
@@ -198,8 +200,8 @@
             cid: $link,
             did
           }).toString();
-          const url = `https://public.api.bsky.app/xrpc/com.atproto.sync.getBlob?${queryParams}`;
-          const imageBlob = await fetchFrom(url)
+          const url = `https://bsky.social/xrpc/com.atproto.sync.getBlob?${queryParams}`;
+          const imageBlob = await fetchFrom(url, 'blob')
           return imageBlob
         },
         // Watch for changes to the match word and update filtered tweets
@@ -213,22 +215,26 @@
         }
       };
     }
-    async function fetchFrom(url) {
+    async function fetchFrom(url, type = 'application/json') {
 
       try {
         const response = await fetch(url, {
           method: 'GET',
           headers: {
-            'Content-Type': 'application/json',
+            'Content-Type': type,
           },
         });
 
         if (!response.ok) {
           throw new Error(`Error fetching: ${response.status} ${response.statusText}`);
         }
-
-        const data = await response.json();
-        return data;
+        if (type == 'application/json') {
+          const data = await response.json();
+          return data;
+        } else if (type == 'blob') {
+          const data = await response.blob();
+          return data;
+        }
       } catch (error) {
         console.error('Failed to fetch:', error);
         throw error;
