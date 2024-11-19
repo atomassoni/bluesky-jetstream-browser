@@ -7,10 +7,12 @@
   <title>Real-Time Feed</title>
   <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.2/dist/cdn.min.js" defer></script>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script type="module">
+  <!-- <script type="module">
     import { stemmer } from 'https://esm.sh/stemmer@2?bundle'
     window.stemmer = stemmer
-  </script>
+  </script> -->
+  <script src="https://unpkg.com/compromise"></script>
+
   <script type="module">
     import { format } from 'https://cdn.jsdelivr.net/npm/date-fns@4.1.0/+esm'
     window.format = format
@@ -117,10 +119,18 @@
             }
           })
 
-          // Set up WebSocket subscription
-          const exampleSocket = new WebSocket("wss://jetstream2.us-east.bsky.network/subscribe\?wantedCollections=app.bsky.feed.post");
+          const websocket = new WebSocket("wss://jetstream2.us-east.bsky.network/subscribe\?wantedCollections=app.bsky.feed.post");
 
-          exampleSocket.onmessage = async (event) => {
+          websocket.onopen = () => {
+            setInterval(() => {
+              websocket.send(JSON.stringify({ ping: "pong" })); 
+            }, 40000); 
+          };
+
+          websocket.onclose = (event) => {
+            console.log(event)
+          }
+          websocket.onmessage = async (event) => {
             // const event = JSON.parse(event)
             // console.log(event)
             const data = JSON.parse(event.data);
@@ -134,10 +144,9 @@
               return
             }
 
-            const stemmedSearch = stemmer(this.matchWord)
-            const stemmedContent = stemmer(text)
-            const regex = new RegExp(`\\b${stemmedSearch}\\b`, 'i'); // Create regex with the current match word
-            if (regex.test(stemmedContent)) {
+            const doc = nlp(text)
+            // const regex = new RegExp(`\\b${stemmedSearch}\\b`, 'i'); // Create regex with the current match word
+            if (doc.has(this.matchWord) || !this.matchWord) {
               // console.log(data)
               const newTweet = {
                 id: cid,
