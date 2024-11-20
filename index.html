@@ -139,6 +139,16 @@
               localStorage.setItem('matchWord', newValue);
             }
           })
+          try {
+            const response = await fetch('https://raw.githubusercontent.com/6/stopwords-json/refs/heads/master/dist/en.json');
+            if (!response.ok) {
+              throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const stopwords = await response.json();
+            this.stopwords = new Set(stopwords)
+          } catch (err) {
+            console.error(err)
+          }
           const websocket = new WebSocket("wss://jetstream2.us-east.bsky.network/subscribe\?wantedCollections=app.bsky.feed.post");
 
           websocket.onopen = () => {
@@ -173,8 +183,8 @@
 
             for (const noun of res) {
               const { normal } = noun
-              const isPronoun = nlp(normal).nouns('#Pronoun').out('array').length
-              if (isPronoun) continue
+              // const isPronoun = nlp(normal).nouns('#Pronoun').out('array').length
+              if (this.stopwords.has(normal)) continue
               const dateDiff = time_us - new Date(createdAt).valueOf() * 1000;
               if (dateDiff > 3600*1000000) continue
               // const isStopword = nlp(normal).match('#Stopword').out('array').length
