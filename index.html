@@ -150,12 +150,12 @@
               throw new Error(`HTTP error! status: ${response.status}`);
             }
             const stopwords = await response.json();
-            nlp.plugin({
-              words: stopwords.reduce((acc, word) => {
-                acc[word] = 'Stopword';
-                return acc;
-              }, {})
-            });
+            // nlp.plugin({
+            //   words: stopwords.reduce((acc, word) => {
+            //     acc[word] = 'Stopword';
+            //     return acc;
+            //   }, {})
+            // });
           } catch (err) {
             console.error(err)
           }
@@ -194,11 +194,11 @@
 
             for (const noun of res) {
               const { normal } = noun
-              // const isPronoun = nlp(normal).nouns('#Pronoun').out('array').length
-              const isStopword = nlp(normal).match('#Stopword').out('array').length
+              const isPronoun = nlp(normal).nouns('#Pronoun').out('array').length
+              // const isStopword = nlp(normal).match('#Stopword').out('array').length
               const cleanNormal = normal.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "");
 
-              if (isStopword) continue
+              if (isPronoun) continue
               if (!this.properNouns[cleanNormal]) {
                 this.properNouns[cleanNormal] = 0
               }
