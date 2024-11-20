@@ -98,19 +98,14 @@
       </template>
     </div>
   </div>
-
-
-
   <script>
-    const model = 'Xenova/distilbert-base-uncased-finetuned-sst-2-english';
-
     function tweetFeed() {
       return {
         matchWord: 'twitter', // Default match word
         tweets: [],
         skembeddings: [],
         skeets: [],
-        stopwords: [],
+        stopwords: new Set(),
         embedTypes: [
           //for later
           "app.bsky.embed.images",
@@ -144,7 +139,6 @@
               localStorage.setItem('matchWord', newValue);
             }
           })
-      
           const websocket = new WebSocket("wss://jetstream2.us-east.bsky.network/subscribe\?wantedCollections=app.bsky.feed.post");
 
           websocket.onopen = () => {
@@ -163,7 +157,7 @@
             // console.log(event)
             const data = JSON.parse(event.data);
 
-            const { commit, did } = data
+            const { commit, did, time_us } = data
             // console.log(data)
             if (!commit) return
             const { operation, cid, record, rkey } = commit || {}
@@ -180,10 +174,12 @@
             for (const noun of res) {
               const { normal } = noun
               const isPronoun = nlp(normal).nouns('#Pronoun').out('array').length
+              if (isPronoun) continue
+              const dateDiff = time_us - new Date(createdAt).valueOf() * 1000;
+              if (dateDiff > 3600*1000000) continue
               // const isStopword = nlp(normal).match('#Stopword').out('array').length
               const cleanNormal = normal.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "");
 
-              if (isPronoun) continue
               if (!this.properNouns[cleanNormal]) {
                 this.properNouns[cleanNormal] = 0
               }
