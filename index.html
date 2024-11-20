@@ -11,6 +11,7 @@
     import { stemmer } from 'https://esm.sh/stemmer@2?bundle'
     window.stemmer = stemmer
   </script> -->
+
   <script src="https://unpkg.com/compromise"></script>
 
   <script type="module">
@@ -26,7 +27,13 @@
   <div x-data="tweetFeed()" class="w-full max-w-2xl p-4">
     <!-- Heading -->
     <h1 class="text-2xl font-bold mb-4 text-gray-800">Real-Time Feed</h1>
-
+    <div class="mb-4 flex flex-wrap gap-2">
+      <template x-for="word in trendingWords" :key="word">
+        <button @click="populateInput(word)" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+          <span x-text="word"></span>
+        </button>
+      </template>
+    </div>
     <!-- Match Word Input -->
     <div class="mb-4">
       <label for="match-word" class="block text-sm font-medium text-gray-700">Filter by word:</label>
@@ -95,10 +102,14 @@
 
 
   <script>
+    const model = 'Xenova/distilbert-base-uncased-finetuned-sst-2-english';
+
     function tweetFeed() {
       return {
         matchWord: 'twitter', // Default match word
         tweets: [],
+        skembeddings: [],
+        skeets: [],
         embedTypes: [
           //for later
           "app.bsky.embed.images",
@@ -107,6 +118,11 @@
           "app.bsky.embed.video",
           "app.bsky.embed.recordWithMedia"
         ],
+        properNouns: {},
+        trendingWords: [],
+        populateInput(word) {
+          this.matchWord = word;
+        },
         init() {
           const savedWord = localStorage.getItem('matchWord');
           console.log({ savedWord })
@@ -123,17 +139,20 @@
 
           websocket.onopen = () => {
             setInterval(() => {
-              websocket.send(JSON.stringify({ ping: "pong" })); 
-            }, 40000); 
+              websocket.send(JSON.stringify({ ping: "pong" }));
+            }, 40000);
           };
 
           websocket.onclose = (event) => {
             console.log(event)
           }
+          let counter = 0
+
           websocket.onmessage = async (event) => {
             // const event = JSON.parse(event)
             // console.log(event)
             const data = JSON.parse(event.data);
+
             const { commit, did } = data
             // console.log(data)
             if (!commit) return
@@ -145,6 +164,35 @@
             }
 
             const doc = nlp(text)
+            const nouns = nlp(text).nouns('#ProperNoun')
+            const res = nouns.out('topk')
+
+            for (const noun of res) {
+              const { normal } = noun
+              const isPronoun = nlp(normal).nouns('#Pronoun').out('array').length
+              const cleanNormal = normal.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "");
+
+              if (isPronoun) continue
+              if (!this.properNouns[cleanNormal]) {
+                this.properNouns[cleanNormal] = 0
+              }
+              this.properNouns[cleanNormal] = this.properNouns[cleanNormal] + 1
+            }
+            if (counter % 1000 == 0) {
+              const yes = Object.entries(this.properNouns).map(([noun, count]) => ({ noun, count })).sort((a, b) => b.count - a.count)
+              console.log(yes)
+              if (counter % 5000 == 0) {
+
+                this.properNouns = {}
+                for (const knoun of yes.slice(0, 150)) {
+                  const { noun, count } = knoun
+                  this.properNouns[noun] = count
+                }
+                this.trendingWords = yes.slice(0, 10).map(knoun => knoun.noun)
+              }
+            }
+
+            counter++
             // const regex = new RegExp(`\\b${stemmedSearch}\\b`, 'i'); // Create regex with the current match word
             if (doc.has(this.matchWord) || !this.matchWord) {
               // console.log(data)
