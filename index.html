@@ -38,6 +38,7 @@
           </button>
         </template>
       </div>
+
       <!-- Match Word Input -->
       <div class="mb-4">
         <label for="match-word" class="block text-sm font-medium text-gray-700"
@@ -51,6 +52,7 @@
           class="mt-1 w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400"
         />
       </div>
+      <h3 class="text-2xl font-bold mb-4 text-gray-800"></h3>
 
       <!-- Tweets List -->
       <div>
@@ -123,6 +125,7 @@
                   class="block mt-2 text-gray-700 whitespace-pre-wrap hover:underline"
                   x-text="tweet.content"
                 ></a>
+                <!-- Images -->
                 <div class="mt-2" x-show="tweet.images?.length > 0">
                   <template x-for="image in tweet.images" :key="image">
                     <a :href="tweet.postUrl" target="_blank">
@@ -134,6 +137,51 @@
                     </a>
                   </template>
                 </div>
+                <!-- Embeds -->
+                <template x-if="tweet.external">
+                  <div class="mt-4">
+                    <div
+                      class="border border-gray-300 rounded-lg shadow-md overflow-hidden max-w-md mt-4"
+                    >
+                      <!-- Thumbnail -->
+                      <a
+                        :href="tweet.external.uri"
+                        target="_blank"
+                        class="block"
+                      >
+                        <img
+                          x-show="tweet.external.imageSrc"
+                          :src="tweet.external.gifSrc ? tweet.external.gifSrc : tweet.external.imageSrc"
+                          :alt="tweet.external.alt"
+                          class="w-full object-contain"
+                        />
+                      </a>
+                      <!-- Content -->
+                      <div class="p-4" x-show="tweet.external.title">
+                        <a
+                          :href="tweet.external.uri"
+                          target="_blank"
+                          class="block"
+                        >
+                          <h3
+                            class="text-lg font-semibold text-600 hover:underline"
+                            x-text="tweet.external.title"
+                          ></h3>
+                          <p
+                            class="text-gray-600 mt-2"
+                            x-text="tweet.external.description"
+                          ></p>
+                        </a>
+                        <a
+                          :href="tweet.external.uri"
+                          target="_blank"
+                          class="text-sm text-500 hover:underline mt-4 inline-block"
+                          x-text="tweet.external.uri"
+                        ></a>
+                      </div>
+                    </div>
+                  </div>
+                </template>
               </div>
             </div>
           </div>
@@ -145,7 +193,6 @@
         return {
           matchWord: "twitter", // Default match word
           tweets: [],
-
           stopwords: new Set(),
           embedTypes: [
             //for later
@@ -173,7 +220,6 @@
           counter: 0,
           async init() {
             const savedWord = localStorage.getItem("matchWord");
-            console.log({ savedWord });
             if (savedWord) {
               this.matchWord = savedWord;
             }
@@ -224,6 +270,7 @@
               // console.log(event)
               const data = JSON.parse(event.data);
               const { commit, did, time_us } = data;
+
               // console.log(data)
               if (!commit) return;
               const { operation, cid, record, rkey } = commit || {};
@@ -233,7 +280,7 @@
               if (operation == "delete") {
                 return;
               }
-              if (false) {
+              if (facets?.length) {
                 const tags = facets
                   .filter(
                     ({ features: [{ $type, tag }] }) =>
@@ -250,13 +297,13 @@
                   });
               }
               const doc = nlp(text);
-              const nouns = nlp(text).nouns("#ProperNoun");
+              const nouns = doc.nouns("#ProperNoun");
               const res = nouns.out("topk");
-
               for (const noun of res) {
                 const { normal } = noun;
                 // const isPronoun = nlp(normal).nouns('#Pronoun').out('array').length
                 if (this.stopwords.has(normal)) continue;
+                if (!langs?.includes("en")) continue;
                 const dateDiff = time_us - new Date(createdAt).valueOf() * 1000;
                 if (dateDiff > 3600 * 1000000) continue;
                 // const isStopword = nlp(normal).match('#Stopword').out('array').length
@@ -315,6 +362,7 @@
                         cid: parent.cid,
                       });
                       const parentProfile = await this.getProfile(repo);
+
                       const { handle, avatar, displayName } = parentProfile;
                       newTweet.parent = {
                         content: reply.value?.text,
@@ -338,12 +386,40 @@
                         );
                         newTweet.images.push(URL.createObjectURL(blob));
                       }
+                    } else if (embed.$type === "app.bsky.embed.external") {
+                      newTweet.external = {}; // embed;
+                      const { external } = embed;
+                      const { title, description, uri } = external;
+                      if (external.thumb) {
+                        const blob = await this.getImageBlob(
+                          external.thumb.ref.$link,
+                          did
+                        );
+                        newTweet.external.imageSrc = URL.createObjectURL(blob);
+                      }
+                      if (description.toLowerCase()?.startsWith("alt")) {
+                        newTweet.external.alt = description;
+                        newTweet.external.gifSrc = uri;
+                      } else {
+                        newTweet.external.alt = "Thumbnail";
+                        newTweet.external.title = title;
+                        newTweet.external.description = description;
+                        newTweet.external.uri = uri;
+                      }
+                    } else {
+                      console.log({ embed });
                     }
                   }
 
                   try {
-                    const profile = await this.getProfile(did);
+                    const [profile] = await Promise.all([
+                      this.getProfile(did),
+                      // this.getServices(did),
+                    ]);
                     console.log("profile", profile);
+                    // if (services.views?.length)
+                    //   console.log("services", services);
+
                     const { handle, avatar, displayName } = profile;
                     newTweet.userHandle = handle;
                     newTweet.userName = displayName;
@@ -374,6 +450,13 @@
               console.log("Window focused, restarting WebSocket...");
               this.startWebsocket();
             });
+          },
+          async getServices(actorIdentifier) {
+            const endpoint =
+              "https://public.api.bsky.app/xrpc/app.bsky.labeler.getServices";
+            const url = `${endpoint}?dids=${actorIdentifier}&detailed=true`;
+            const profile = await fetchFrom(url);
+            return profile;
           },
           async getProfile(actorIdentifier) {
             const endpoint = `https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile`;
@@ -426,6 +509,23 @@
           console.error("Failed to fetch:", error);
           throw error;
         }
+      }
+
+      function getWink() {
+        // const winkNLP = (await import("https://cdn.skypack.dev/wink-nlp"))
+        //   .default;
+        // const model = (
+        //   await import("https://cdn.skypack.dev/wink-eng-lite-web-model")
+        // ).default;
+        // const nlp1 = winkNLP(model);
+        // console.log("wink", nlp1)
+        // const its = nlp1.its;
+        // const as = nlp1.as;
+        // // window.nlp1 = nlp;
+        // const text =
+        //   "Its quarterly profits jumped 76% to $1.13 billion for the three months to December.";
+        // const doc = nlp1.readDoc(text);
+        // console.log(doc.tokens().out(its.type, as.freqTable));
       }
     </script>
   </body>
